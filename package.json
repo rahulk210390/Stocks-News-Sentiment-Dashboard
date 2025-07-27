@@ -1,0 +1,17 @@
+{
+  "name": "trading-analytics-dashboard",
+  "version": "1.0.0",
+  "description": "A responsive web application that displays detailed stock information and analytics using Python FastAPI and WebSockets",
+  "keywords": [
+    "trading",
+    "stocks",
+    "analytics",
+    "finance",
+    "dashboard",
+    "python",
+    "fastapi",
+    "websockets"
+  ],
+  "author": "",
+  "license": "MIT"
+}

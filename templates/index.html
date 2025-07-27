@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Stock-News Sentiment Dashboard</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <link rel="stylesheet" href="/css/styles.css">
+</head>
+<body>
+    <header class="header">
+        <div class="container">
+            <div class="row align-items-center">
+                <div class="col-md-6">
+                    <h1>Stock-News Sentiment Dashboard</h1>
+                </div>
+                <div class="col-md-6">
+                    <!-- In the search container -->
+                    <div class="search-container">
+                        <div class="symbol-search-wrapper">
+                            <input type="text" id="symbolSearch" placeholder="Enter stock symbol (e.g., BCS)" class="form-control">
+                            <div id="symbolSuggestions" class="symbol-suggestions"></div>
+                        </div>
+                        <button id="searchBtn" class="btn btn-primary">Search</button>
+                    </div>
+                    
+                    <!-- Add this after the stock overview card and before the news sentiment card -->
+                    <div class="row mt-4" id="peerCompaniesSection" style="display: none;">
+                        <div class="col-12">
+                            <div class="card peer-companies">
+                                <div class="card-header">
+                                    <h2>Peer Companies</h2>
+                                </div>
+                                <div class="card-body">
+                                    <div id="peerCompaniesList" class="peer-companies-list">
+                                        <div class="loading-message">Loading peer companies...</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <main class="container">
+        <div class="row">
+            <div class="col-12">
+                <div class="card stock-overview">
+                    <div class="card-header">
+                        <h2 id="stockSymbol">BCS</h2>
+                        <h3 id="stockName">Barclays PLC</h3>
+                    </div>
+                    <div class="card-body">
+                        <div class="row">
+                            <div class="col-md-4">
+                                <div class="price-container">
+                                    <h2 id="currentPrice">$0.00</h2>
+                                    <div id="priceChange" class="price-change">$0.00 (0.00%)</div>
+                                </div>
+                            </div>
+                            <div class="col-md-8">
+                                <div class="row market-data">
+                                    <div class="col-6 col-md-3">
+                                        <div class="data-item">
+                                            <div class="label">Market Cap</div>
+                                            <div id="marketCap" class="value">$0.00B</div>
+                                        </div>
+                                    </div>
+                                    <div class="col-6 col-md-3">
+                                        <div class="data-item">
+                                            <div class="label">P/E Ratio</div>
+                                            <div id="peRatio" class="value">0.00</div>
+                                        </div>
+                                    </div>
+                                    <div class="col-6 col-md-3">
+                                        <div class="data-item">
+                                            <div class="label">EPS</div>
+                                            <div id="eps" class="value">0.00</div>
+                                        </div>
+                                    </div>
+                                    <div class="col-6 col-md-3">
+                                        <div class="data-item">
+                                            <div class="label">Beta</div>
+                                            <div id="beta" class="value">0.00</div>
+                                        </div>
+                                    </div>
+                                    <div class="col-6 col-md-3">
+                                        <div class="data-item">
+                                            <div class="label">Volume</div>
+                                            <div id="volume" class="value">0</div>
+                                        </div>
+                                    </div>
+                                    <div class="col-6 col-md-3">
+                                        <div class="data-item">
+                                            <div class="label">Avg Volume</div>
+                                            <div id="avgVolume" class="value">0</div>
+                                        </div>
+                                    </div>
+                                    <div class="col-6 col-md-3">
+                                        <div class="data-item">
+                                            <div class="label">Prev Close</div>
+                                            <div id="prevClose" class="value">$0.00</div>
+                                        </div>
+                                    </div>
+                                    <div class="col-6 col-md-3">
+                                        <div class="data-item">
+                                            <div class="label">Open</div>
+                                            <div id="open" class="value">$0.00</div>
+                                        </div>
+                                    </div>
+                                    <div class="col-6 col-md-3">
+                                        <div class="data-item">
+                                            <div class="label">Day's Range</div>
+                                            <div id="daysRange" class="value">$0.00 - $0.00</div>
+                                        </div>
+                                    </div>
+                                    <div class="col-6 col-md-3">
+                                        <div class="data-item">
+                                            <div class="label">52 Week Range</div>
+                                            <div id="fiftyTwoWeekRange" class="value">$0.00 - $0.00</div>
+                                        </div>
+                                    </div>
+                                    <div class="col-6 col-md-3">
+                                        <div class="data-item">
+                                            <div class="label">Dividend Yield</div>
+                                            <div id="dividendYield" class="value">0.00%</div>
+                                        </div>
+                                    </div>
+                                    <div class="col-6 col-md-3">
+                                        <div class="data-item">
+                                            <div class="label">Dividend Rate</div>
+                                            <div id="dividendRate" class="value">$0.00</div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="row mt-4">
+            <div class="col-12">
+                <div class="card sentiment-analysis">
+                    <div class="card-header">
+                        <h2>News Sentiment Analysis</h2>
+                    </div>
+                    <div class="card-body">
+                        <div class="row">
+                            <div class="col-md-4">
+                                <div class="chart-container">
+                                    <canvas id="sentimentChart"></canvas>
+                                </div>
+                            </div>
+                            <div class="col-md-8">
+                                <div id="newsList" class="news-list">
+                                    <div class="loading-message">Loading news articles...</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <footer class="footer">
+        <div class="container">
+            <p>© 2025 Stock-News Sentiment Dashboard Dashboard. Data provided by Yahoo Finance and Finnhub. Developed by Rahul Kunal</p>
+        </div>
+    </footer>
+
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="/js/config.js"></script>
+    <script src="/js/sentiment.js"></script>
+    <script src="/js/app.js"></script>
+</body>
+</html>

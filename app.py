@@ -14,7 +14,6 @@ import logging
 from datetime import datetime, timedelta
 import re
 from dotenv import load_dotenv
-from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 from concurrent.futures import ThreadPoolExecutor
 # Import sentiment analysis libraries
 from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
@@ -24,6 +23,11 @@ from afinn import Afinn
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# Sentiment analyzer singletons — built once and reused for every article so the
+# VADER lexicon and Afinn word list aren't reloaded on each call.
+vader_analyzer = SentimentIntensityAnalyzer()
+afinn_analyzer = Afinn()
 
 # Initialize FastAPI app
 app = FastAPI(title="Stock News Sentiment Dashboard")
@@ -269,6 +273,8 @@ class APIClient:
                         'summary': article.get('summary', 'No summary available.'),
                         'url': url
                     }
+                    text = f"{processed_article['headline']} {processed_article['summary']}"
+                    processed_article['sentiment'] = SentimentAnalysis.analyze_sentiment(text)
                     processed_news.append(processed_article)
                 
                 return processed_news

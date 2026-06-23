@@ -32,19 +32,24 @@ class TradingApp {
         this.symbolSuggestionsElement = document.getElementById('symbolSuggestions');
         this.peerCompaniesSectionElement = document.getElementById('peerCompaniesSection');
         this.peerCompaniesListElement = document.getElementById('peerCompaniesList');
-        
+        this.marketStatusElement = document.getElementById('marketStatus');
+        this.lastUpdatedElement = document.getElementById('lastUpdated');
+        this.overallSentimentElement = document.getElementById('overallSentiment');
+        this.overallSentimentBadgeElement = document.getElementById('overallSentimentBadge');
+        this.articleCountElement = document.getElementById('articleCount');
+
         // Debounce timer for symbol lookup
         this.symbolLookupTimer = null;
-        
+
         // Current stock symbol
         this.currentSymbol = config.DEFAULT_STOCK_SYMBOL;
-        
+
         // WebSocket connection
         this.socket = null;
-        
+
         // Sentiment chart instance
         this.sentimentChart = null;
-        
+
         // Initialize the application
         this.init();
     }
@@ -83,12 +88,28 @@ class TradingApp {
         
         // Set initial stock symbol
         this.stockSymbolElement.textContent = this.currentSymbol;
-        
+
         // Connect to WebSocket for the default symbol
         this.connectWebSocket(this.currentSymbol);
-        
+
         // Initialize sentiment chart with empty data
         this.initSentimentChart();
+
+        // Market status indicator (updated every minute)
+        this.updateMarketStatus();
+        setInterval(() => this.updateMarketStatus(), 60000);
+    }
+
+    updateMarketStatus() {
+        if (!this.marketStatusElement) return;
+        const now = new Date();
+        const nyTime = new Date(now.toLocaleString('en-US', { timeZone: 'America/New_York' }));
+        const day = nyTime.getDay();
+        const totalMinutes = nyTime.getHours() * 60 + nyTime.getMinutes();
+        // NYSE: Mon–Fri 9:30–16:00 ET
+        const isOpen = day >= 1 && day <= 5 && totalMinutes >= 570 && totalMinutes < 960;
+        this.marketStatusElement.textContent = isOpen ? 'MARKET OPEN' : 'MARKET CLOSED';
+        this.marketStatusElement.className = `market-status ${isOpen ? 'open' : 'closed'}`;
     }
     
     /**
@@ -338,6 +359,11 @@ class TradingApp {
         if (stockData.avgVolume) {
             this.avgVolumeElement.textContent = stockData.avgVolume;
         }
+
+        if (this.lastUpdatedElement) {
+            const now = new Date();
+            this.lastUpdatedElement.textContent = `Updated ${now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}`;
+        }
     }
     
     /**
@@ -393,19 +419,31 @@ class TradingApp {
         }
         
         // Initialize sentiment counts
-        const sentimentCounts = {
-            positive: 0,
-            neutral: 0,
-            negative: 0
-        };
-        
-        // Count sentiments from backend analysis
+        const sentimentCounts = { positive: 0, neutral: 0, negative: 0 };
+        let totalScore = 0;
+        let scoreCount = 0;
+
         newsData.forEach(article => {
-            if (article.sentiment && article.sentiment.category) {
-                sentimentCounts[article.sentiment.category]++;
+            if (article.sentiment) {
+                if (article.sentiment.category) sentimentCounts[article.sentiment.category]++;
+                if (article.sentiment.custom_score !== undefined) {
+                    totalScore += article.sentiment.custom_score;
+                    scoreCount++;
+                }
             }
         });
-        
+
+        // Overall sentiment summary
+        if (this.overallSentimentElement && scoreCount > 0) {
+            const avgScore = totalScore / scoreCount;
+            const label = avgScore > 0.05 ? 'Bullish' : avgScore < -0.05 ? 'Bearish' : 'Neutral';
+            const cls   = avgScore > 0.05 ? 'positive' : avgScore < -0.05 ? 'negative' : 'neutral';
+            this.overallSentimentElement.style.display = 'flex';
+            this.overallSentimentBadgeElement.textContent = `${label} (${avgScore.toFixed(2)})`;
+            this.overallSentimentBadgeElement.className = `badge ${cls}`;
+            this.articleCountElement.textContent = `${newsData.length} articles`;
+        }
+
         // Update sentiment chart
         this.updateSentimentChart(sentimentCounts);
         
@@ -434,7 +472,7 @@ class TradingApp {
                 article.image : defaultImages[index % defaultImages.length];
             
             const articleElement = document.createElement('div');
-            articleElement.className = `news-item`;
+            articleElement.className = `news-item sentiment-${sentiment.toLowerCase()}`;
             
             const date = new Date(article.datetime * 1000);
             const formattedDate = date.toLocaleDateString();
@@ -539,21 +577,22 @@ class TradingApp {
      * Clear stock data from the UI
      */
     clearStockData() {
-        this.currentPriceElement.textContent = '$0.00';
-        this.priceChangeElement.textContent = '$0.00 (0.00%)';
+        this.currentPriceElement.textContent = '--';
+        this.priceChangeElement.textContent = '-- (--)';
         this.priceChangeElement.className = 'price-change';
-        this.marketCapElement.textContent = '$0.00B';
-        this.peRatioElement.textContent = '0.00';
-        this.epsElement.textContent = 'N/A';
-        this.betaElement.textContent = 'N/A';
-        this.dividendYieldElement.textContent = 'N/A';
-        this.dividendRateElement.textContent = 'N/A';
-        this.volumeElement.textContent = '0';
-        this.prevCloseElement.textContent = '$0.00';
-        this.openElement.textContent = '$0.00';
-        this.daysRangeElement.textContent = '$0.00 - $0.00';
-        this.fiftyTwoWeekRangeElement.textContent = '$0.00 - $0.00';
-        this.avgVolumeElement.textContent = '0';
+        this.marketCapElement.textContent = '--';
+        this.peRatioElement.textContent = '--';
+        this.epsElement.textContent = '--';
+        this.betaElement.textContent = '--';
+        this.dividendYieldElement.textContent = '--';
+        this.dividendRateElement.textContent = '--';
+        this.volumeElement.textContent = '--';
+        this.prevCloseElement.textContent = '--';
+        this.openElement.textContent = '--';
+        this.daysRangeElement.textContent = '--';
+        this.fiftyTwoWeekRangeElement.textContent = '--';
+        this.avgVolumeElement.textContent = '--';
+        if (this.lastUpdatedElement) this.lastUpdatedElement.textContent = '--';
     }
     
     /**

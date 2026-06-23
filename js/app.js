@@ -1,618 +1,729 @@
-/**
- * Trading Analytics Dashboard - Main Application
- * 
- * This file contains the main TradingApp class that initializes and manages the application.
- * It handles WebSocket connections, UI updates, and user interactions.
- */
+/* =====================================================================
+   StockSentiment — TradingApp
+   Enhancements:
+     #1 fast_info + TTL cache (server-side, app.py)
+     #2 Interactive price-history Chart.js line chart
+     #3 News events as coloured markers on price chart
+     #4 Watchlist (localStorage, chip strip)
+     #5 Dark mode + sentiment filter tabs + keyboard shortcut
+   ===================================================================== */
 
 class TradingApp {
-    // Add these properties to the TradingApp constructor
     constructor() {
-        // UI elements
-        this.symbolSearchInput = document.getElementById('symbolSearch');
-        this.searchBtn = document.getElementById('searchBtn');
-        this.stockSymbolElement = document.getElementById('stockSymbol');
-        this.stockNameElement = document.getElementById('stockName');
-        this.currentPriceElement = document.getElementById('currentPrice');
-        this.priceChangeElement = document.getElementById('priceChange');
-        this.marketCapElement = document.getElementById('marketCap');
-        this.peRatioElement = document.getElementById('peRatio');
-        this.epsElement = document.getElementById('eps');
-        this.betaElement = document.getElementById('beta');
-        this.volumeElement = document.getElementById('volume');
-        this.prevCloseElement = document.getElementById('prevClose');
-        this.openElement = document.getElementById('open');
-        this.daysRangeElement = document.getElementById('daysRange');
-        this.fiftyTwoWeekRangeElement = document.getElementById('fiftyTwoWeekRange');
-        this.avgVolumeElement = document.getElementById('avgVolume');
-        this.dividendYieldElement = document.getElementById('dividendYield');
-        this.dividendRateElement = document.getElementById('dividendRate');
-        this.newsListElement = document.getElementById('newsList');
-        this.sentimentChartElement = document.getElementById('sentimentChart');
-        this.symbolSuggestionsElement = document.getElementById('symbolSuggestions');
-        this.peerCompaniesSectionElement = document.getElementById('peerCompaniesSection');
-        this.peerCompaniesListElement = document.getElementById('peerCompaniesList');
-        this.marketStatusElement = document.getElementById('marketStatus');
-        this.lastUpdatedElement = document.getElementById('lastUpdated');
-        this.overallSentimentElement = document.getElementById('overallSentiment');
-        this.overallSentimentBadgeElement = document.getElementById('overallSentimentBadge');
-        this.articleCountElement = document.getElementById('articleCount');
+        /* ── DOM refs ── */
+        this.symbolSearch       = document.getElementById('symbolSearch');
+        this.searchBtn          = document.getElementById('searchBtn');
+        this.symbolSuggestions  = document.getElementById('symbolSuggestions');
+        this.stockSymbolEl      = document.getElementById('stockSymbol');
+        this.stockNameEl        = document.getElementById('stockName');
+        this.currentPriceEl     = document.getElementById('currentPrice');
+        this.priceChangeEl      = document.getElementById('priceChange');
+        this.marketCapEl        = document.getElementById('marketCap');
+        this.peRatioEl          = document.getElementById('peRatio');
+        this.epsEl              = document.getElementById('eps');
+        this.betaEl             = document.getElementById('beta');
+        this.volumeEl           = document.getElementById('volume');
+        this.avgVolumeEl        = document.getElementById('avgVolume');
+        this.prevCloseEl        = document.getElementById('prevClose');
+        this.openEl             = document.getElementById('open');
+        this.daysRangeEl        = document.getElementById('daysRange');
+        this.fiftyTwoWeekRangeEl= document.getElementById('fiftyTwoWeekRange');
+        this.dividendYieldEl    = document.getElementById('dividendYield');
+        this.dividendRateEl     = document.getElementById('dividendRate');
+        this.newsListEl         = document.getElementById('newsList');
+        this.peerCompaniesListEl= document.getElementById('peerCompaniesList');
+        this.peerSectionEl      = document.getElementById('peerCompaniesSection');
+        this.marketStatusEl     = document.getElementById('marketStatus');
+        this.lastUpdatedEl      = document.getElementById('lastUpdated');
+        this.overallSentimentEl = document.getElementById('overallSentiment');
+        this.sentimentBadgeEl   = document.getElementById('overallSentimentBadge');
+        this.articleCountEl     = document.getElementById('articleCount');
+        this.darkModeToggle     = document.getElementById('darkModeToggle');
+        this.addToWatchlistBtn  = document.getElementById('addToWatchlistBtn');
+        this.watchlistStrip     = document.getElementById('watchlistStrip');
+        this.watchlistItemsEl   = document.getElementById('watchlistItems');
+        this.chartLoadingEl     = document.getElementById('chartLoading');
+        this.chartDataNote      = document.getElementById('chartDataNote');
 
-        // Debounce timer for symbol lookup
-        this.symbolLookupTimer = null;
+        /* ── State ── */
+        this.currentSymbol      = DEFAULT_STOCK_SYMBOL;
+        this.ws                 = null;
+        this.reconnectAttempts  = 0;
+        this.reconnectTimer     = null;
+        this.debounceTimer      = null;
+        this.sentimentChart     = null;
+        this.priceChart         = null;
+        this.currentPeriod      = '1mo';
+        this.currentNewsData    = [];
+        this.currentHistoryData = null;
+        this.watchlist          = JSON.parse(localStorage.getItem('watchlist') || '[]');
+        this.watchlistPrices    = JSON.parse(localStorage.getItem('watchlistPrices') || '{}');
+        this.activeFilter       = 'all';
+        this._lastSentimentCounts = null;
 
-        // Current stock symbol
-        this.currentSymbol = config.DEFAULT_STOCK_SYMBOL;
-
-        // WebSocket connection
-        this.socket = null;
-
-        // Sentiment chart instance
-        this.sentimentChart = null;
-
-        // Initialize the application
         this.init();
     }
-    
-    // Add these methods to the TradingApp class
-    
-    /**
-     * Initialize the application
-     */
-    // Add this at the top of your init() method
+
+    /* =================================================================
+       INIT
+       ================================================================= */
     init() {
-        // Check if Chart.js is loaded
-        if (typeof Chart === 'undefined') {
-            console.error('Chart.js is not loaded!');
-        } else {
-            console.log('Chart.js is loaded successfully');
-        }
-        
-        // Set up event listeners
-        this.searchBtn.addEventListener('click', () => this.handleSymbolSearch());
-        this.symbolSearchInput.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') {
-                this.handleSymbolSearch();
-            }
-        });
-        // Add input event for symbol search suggestions
-        this.symbolSearchInput.addEventListener('input', () => this.handleSymbolInput());
-
-        // Add click event outside suggestions to close them
-        document.addEventListener('click', (e) => {
-            if (!this.symbolSearchInput.contains(e.target) && !this.symbolSuggestionsElement.contains(e.target)) {
-                this.symbolSuggestionsElement.style.display = 'none';
-            
-            }
-        });
-        
-        // Set initial stock symbol
-        this.stockSymbolElement.textContent = this.currentSymbol;
-
-        // Connect to WebSocket for the default symbol
-        this.connectWebSocket(this.currentSymbol);
-
-        // Initialize sentiment chart with empty data
+        this.initDarkMode();
         this.initSentimentChart();
-
-        // Market status indicator (updated every minute)
+        this.initPriceChart();
+        this.initPeriodSelector();
+        this.initWatchlist();
+        this.initSentimentFilter();
+        this.initSearch();
+        this.initKeyboardShortcuts();
         this.updateMarketStatus();
         setInterval(() => this.updateMarketStatus(), 60000);
+        this.connectWebSocket();
+        this.loadPeers(this.currentSymbol);
+        this.fetchPriceHistory(this.currentPeriod);
     }
 
+    /* =================================================================
+       DARK MODE  (#5)
+       ================================================================= */
+    initDarkMode() {
+        const saved = localStorage.getItem('theme') || 'light';
+        document.documentElement.setAttribute('data-theme', saved);
+        this.updateDarkModeIcon();
+        this.darkModeToggle?.addEventListener('click', () => this.toggleDarkMode());
+    }
+
+    toggleDarkMode() {
+        const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+        const next   = isDark ? 'light' : 'dark';
+        document.documentElement.setAttribute('data-theme', next);
+        localStorage.setItem('theme', next);
+        this.updateDarkModeIcon();
+        /* rebuild charts so colours update */
+        if (this.currentHistoryData) this.renderPriceChart(this.currentHistoryData);
+        if (this.sentimentChart && this._lastSentimentCounts) {
+            const { pos, neg, neu } = this._lastSentimentCounts;
+            this.updateSentimentChart(pos, neg, neu);
+        }
+    }
+
+    updateDarkModeIcon() {
+        if (!this.darkModeToggle) return;
+        const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+        const icon   = this.darkModeToggle.querySelector('i');
+        if (icon) icon.className = isDark ? 'fas fa-sun' : 'fas fa-moon';
+    }
+
+    /* =================================================================
+       MARKET STATUS
+       ================================================================= */
     updateMarketStatus() {
-        if (!this.marketStatusElement) return;
-        const now = new Date();
-        const nyTime = new Date(now.toLocaleString('en-US', { timeZone: 'America/New_York' }));
-        const day = nyTime.getDay();
-        const totalMinutes = nyTime.getHours() * 60 + nyTime.getMinutes();
-        // NYSE: Mon–Fri 9:30–16:00 ET
-        const isOpen = day >= 1 && day <= 5 && totalMinutes >= 570 && totalMinutes < 960;
-        this.marketStatusElement.textContent = isOpen ? 'MARKET OPEN' : 'MARKET CLOSED';
-        this.marketStatusElement.className = `market-status ${isOpen ? 'open' : 'closed'}`;
-    }
-    
-    /**
-     * Connect to WebSocket for real-time data updates
-     * @param {string} symbol - Stock symbol to subscribe to
-     */
-    connectWebSocket(symbol) {
-        // Close existing socket if any
-        if (this.socket) {
-            this.socket.close();
-        }
-        
-        // Create new WebSocket connection
-        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const wsUrl = `${protocol}//${window.location.host}/ws/${symbol}`;
-        
-        this.socket = new WebSocket(wsUrl);
-        
-        // WebSocket event handlers
-        this.socket.onopen = () => {
-            console.log(`WebSocket connected for symbol: ${symbol}`);
-            // Subscribe to the symbol
-            this.socket.send(JSON.stringify({
-                action: 'subscribe',
-                symbol: symbol
-            }));
-        };
-        
-        this.socket.onmessage = (event) => {
-            const data = JSON.parse(event.data);
-            
-            if (data.type === 'stock_data') {
-                this.updateStockUI(data.data);
-            } else if (data.type === 'news_data') {
-                this.updateNewsUI(data.data);
-            }
-        };
-        
-        this.socket.onerror = (error) => {
-            console.error('WebSocket error:', error);
-        };
-        
-        this.socket.onclose = () => {
-            console.log('WebSocket connection closed');
-            // Try to reconnect after a delay
-            setTimeout(() => {
-                if (this.socket.readyState === WebSocket.CLOSED) {
-                    this.connectWebSocket(this.currentSymbol);
-                }
-            }, 5000);
-        };
-    }
-    /**
-    * Handle symbol input for suggestions
-    */
-    handleSymbolInput() {
-        const query = this.symbolSearchInput.value.trim();
-    
-        // Clear previous timer
-        if (this.symbolLookupTimer) {
-            clearTimeout(this.symbolLookupTimer);
-        }
-    
-        // Clear suggestions if query is empty
-        if (!query) {
-            this.symbolSuggestionsElement.style.display = 'none';
-            return;
-        }
-    
-        // Set a timer to avoid too many requests
-        this.symbolLookupTimer = setTimeout(() => {
-        this.fetchSymbolSuggestions(query);
-        }, 300); // 300ms debounce
+        if (!this.marketStatusEl) return;
+        const now  = new Date();
+        const et   = new Date(now.toLocaleString('en-US', { timeZone: 'America/New_York' }));
+        const day  = et.getDay();
+        const mins = et.getHours() * 60 + et.getMinutes();
+        const isOpen = day >= 1 && day <= 5 && mins >= 570 && mins < 960;
+        this.marketStatusEl.textContent = isOpen ? 'OPEN' : 'CLOSED';
+        this.marketStatusEl.className   = `market-status ${isOpen ? 'open' : 'closed'}`;
     }
 
-    /**
-    * Fetch symbol suggestions from API
-    * @param {string} query - Search query
-    */
-    async fetchSymbolSuggestions(query) {
+    /* =================================================================
+       SEARCH & AUTOCOMPLETE
+       ================================================================= */
+    initSearch() {
+        this.searchBtn.addEventListener('click', () => this.loadSymbol(this.symbolSearch.value.trim().toUpperCase()));
+        this.symbolSearch.addEventListener('keydown', e => {
+            if (e.key === 'Enter') this.loadSymbol(this.symbolSearch.value.trim().toUpperCase());
+        });
+        this.symbolSearch.addEventListener('input', () => {
+            clearTimeout(this.debounceTimer);
+            const q = this.symbolSearch.value.trim();
+            if (q.length < 1) { this.hideSuggestions(); return; }
+            this.debounceTimer = setTimeout(() => this.fetchSuggestions(q), 300);
+        });
+        document.addEventListener('click', e => {
+            if (!e.target.closest('.symbol-search-wrapper')) this.hideSuggestions();
+        });
+    }
+
+    async fetchSuggestions(q) {
         try {
-            const response = await fetch(`/api/symbol-lookup/${encodeURIComponent(query)}`);
-            const data = await response.json();
-        
-            this.displaySymbolSuggestions(data.results);
-        } catch (error) {
-            console.error('Error fetching symbol suggestions:', error);
+            const r = await fetch(`/api/symbol-lookup/${encodeURIComponent(q)}`);
+            const data = await r.json();
+            this.showSuggestions(data.result || []);
+        } catch { /* silent */ }
+    }
+
+    showSuggestions(items) {
+        if (!items.length) { this.hideSuggestions(); return; }
+        this.symbolSuggestions.innerHTML = items.slice(0, 8).map(it =>
+            `<div class="suggestion-item" data-symbol="${it.symbol}">
+               <span class="symbol">${it.symbol}</span>
+               <span class="description">${it.description || ''}</span>
+             </div>`
+        ).join('');
+        this.symbolSuggestions.style.display = 'block';
+        this.symbolSuggestions.querySelectorAll('.suggestion-item').forEach(el =>
+            el.addEventListener('click', () => {
+                this.symbolSearch.value = el.dataset.symbol;
+                this.hideSuggestions();
+                this.loadSymbol(el.dataset.symbol);
+            })
+        );
+    }
+
+    hideSuggestions() { this.symbolSuggestions.style.display = 'none'; }
+
+    loadSymbol(sym) {
+        if (!sym) return;
+        this.currentSymbol = sym;
+        this.stockSymbolEl.textContent = sym;
+        this.clearStockData();
+        this.activeFilter = 'all';
+        this.resetFilterTabs();
+        this.connectWebSocket();
+        this.loadPeers(sym);
+        this.fetchPriceHistory(this.currentPeriod);
+        this.updateWatchlistHighlight();
+    }
+
+    /* =================================================================
+       WEBSOCKET
+       ================================================================= */
+    connectWebSocket() {
+        if (this.ws) { this.ws.onclose = null; this.ws.close(); }
+        const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+        this.ws = new WebSocket(`${proto}://${location.host}/ws/${this.currentSymbol}`);
+        this.ws.onopen    = () => { this.reconnectAttempts = 0; };
+        this.ws.onmessage = e => this.handleMessage(JSON.parse(e.data));
+        this.ws.onerror   = () => {};
+        this.ws.onclose   = () => this.scheduleReconnect();
+    }
+
+    scheduleReconnect() {
+        if (this.reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) return;
+        const delay = Math.min(RECONNECT_DELAY * Math.pow(2, this.reconnectAttempts), 30000);
+        this.reconnectAttempts++;
+        clearTimeout(this.reconnectTimer);
+        this.reconnectTimer = setTimeout(() => this.connectWebSocket(), delay);
+    }
+
+    handleMessage(msg) {
+        if (msg.type === 'stock_data') this.updateStockUI(msg.data);
+        if (msg.type === 'news_data')  this.updateNewsUI(msg.data);
+    }
+
+    /* =================================================================
+       STOCK UI
+       ================================================================= */
+    updateStockUI(data) {
+        if (!data) return;
+
+        /* cache price for watchlist chips */
+        if (data.current_price != null) {
+            this.watchlistPrices[this.currentSymbol] = {
+                price : data.current_price,
+                change: data.price_change_pct || 0,
+            };
+            localStorage.setItem('watchlistPrices', JSON.stringify(this.watchlistPrices));
+            this.renderWatchlist();
+        }
+
+        const fmt = (v, prefix='', suffix='') =>
+            v != null ? `${prefix}${Number(v).toFixed(2)}${suffix}` : '--';
+
+        this.stockSymbolEl.textContent = data.symbol || this.currentSymbol;
+        this.stockNameEl.textContent   = data.company_name || '';
+
+        const price = data.current_price;
+        this.currentPriceEl.textContent = price != null ? `$${Number(price).toFixed(2)}` : '--';
+
+        const chg    = data.price_change    != null ? Number(data.price_change).toFixed(2)    : null;
+        const chgPct = data.price_change_pct != null ? Number(data.price_change_pct).toFixed(2) : null;
+        if (chg !== null) {
+            const sign = chg >= 0 ? '+' : '';
+            this.priceChangeEl.textContent = `${sign}${chg} (${sign}${chgPct}%)`;
+            this.priceChangeEl.className   = `price-change ${Number(chg) >= 0 ? 'positive' : 'negative'}`;
+        } else {
+            this.priceChangeEl.textContent = '--';
+            this.priceChangeEl.className   = 'price-change';
+        }
+
+        const mc = data.market_cap;
+        this.marketCapEl.textContent         = mc ? this.formatLargeNum(mc) : '--';
+        this.peRatioEl.textContent           = fmt(data.pe_ratio);
+        this.epsEl.textContent               = fmt(data.eps, '$');
+        this.betaEl.textContent              = fmt(data.beta);
+        this.volumeEl.textContent            = data.volume    ? this.formatLargeNum(data.volume, 0)    : '--';
+        this.avgVolumeEl.textContent         = data.avg_volume ? this.formatLargeNum(data.avg_volume, 0) : '--';
+        this.prevCloseEl.textContent         = fmt(data.previous_close, '$');
+        this.openEl.textContent              = fmt(data.open, '$');
+
+        const lo = data.day_low, hi = data.day_high;
+        this.daysRangeEl.textContent         = (lo && hi) ? `$${Number(lo).toFixed(2)} – $${Number(hi).toFixed(2)}` : '--';
+
+        const lo52 = data.fifty_two_week_low, hi52 = data.fifty_two_week_high;
+        this.fiftyTwoWeekRangeEl.textContent = (lo52 && hi52) ? `$${Number(lo52).toFixed(2)} – $${Number(hi52).toFixed(2)}` : '--';
+
+        const yld = data.dividend_yield;
+        this.dividendYieldEl.textContent     = yld ? `${(yld * 100).toFixed(2)}%` : '--';
+        this.dividendRateEl.textContent      = fmt(data.dividend_rate, '$');
+
+        if (this.lastUpdatedEl) {
+            this.lastUpdatedEl.textContent = `Updated ${new Date().toLocaleTimeString()}`;
         }
     }
 
-    /**
-    * Display symbol suggestions
-    * @param {Array} suggestions - Symbol suggestions
-    */
-    displaySymbolSuggestions(suggestions) {
-        // Clear previous suggestions
-        this.symbolSuggestionsElement.innerHTML = '';
-    
-        if (!suggestions || suggestions.length === 0) {
-            this.symbolSuggestionsElement.style.display = 'none';
+    clearStockData() {
+        ['currentPrice','priceChange','marketCap','peRatio','eps','beta',
+         'volume','avgVolume','prevClose','open','daysRange',
+         'fiftyTwoWeekRange','dividendYield','dividendRate'].forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.textContent = '--';
+        });
+        this.priceChangeEl.className = 'price-change';
+    }
+
+    formatLargeNum(n, dec=2) {
+        const v = Number(n);
+        if (v >= 1e12) return `$${(v/1e12).toFixed(dec)}T`;
+        if (v >= 1e9)  return `$${(v/1e9 ).toFixed(dec)}B`;
+        if (v >= 1e6)  return `$${(v/1e6 ).toFixed(dec)}M`;
+        return v.toLocaleString();
+    }
+
+    /* =================================================================
+       NEWS UI  (#5 filter, #3 chart markers)
+       ================================================================= */
+    updateNewsUI(articles) {
+        if (!Array.isArray(articles) || !articles.length) {
+            this.newsListEl.innerHTML = '<div class="loading-message">No recent news found.</div>';
             return;
         }
-    
-        // Create suggestion items
-        suggestions.forEach(item => {
-            const suggestionItem = document.createElement('div');
-            suggestionItem.className = 'suggestion-item';
-            suggestionItem.innerHTML = `
-                <span class="symbol">${item.symbol}</span>
-                <span class="description">${item.description || ''}</span>
-            `;
-        
-            // Add click event to select suggestion
-            suggestionItem.addEventListener('click', () => {
-                this.symbolSearchInput.value = item.symbol;
-                this.symbolSuggestionsElement.style.display = 'none';
-                this.handleSymbolSearch();
-            });
-        
-            this.symbolSuggestionsElement.appendChild(suggestionItem);
+        this.currentNewsData = articles;
+
+        let pos = 0, neg = 0, neu = 0, scoreSum = 0;
+        articles.forEach(a => {
+            const s = (a.sentiment?.label || 'Neutral').toLowerCase();
+            if (s === 'positive') pos++;
+            else if (s === 'negative') neg++;
+            else neu++;
+            scoreSum += (a.sentiment?.custom_score ?? 0);
         });
-    
-        // Show suggestions
-        this.symbolSuggestionsElement.style.display = 'block';
-    }
-   
-    /**
-     * Handle symbol search from user input
-     */
-    handleSymbolSearch() {
-        const newSymbol = this.symbolSearchInput.value.trim().toUpperCase();
-        
-        if (newSymbol && newSymbol !== this.currentSymbol) {
-            // Update current symbol
-            this.currentSymbol = newSymbol;
-            this.stockSymbolElement.textContent = this.currentSymbol;
-            
-            // Clear existing data
-            this.clearStockData();
-            this.clearNewsData();
-            
-            // Connect to WebSocket for the new symbol
-            this.connectWebSocket(this.currentSymbol);
-            // Fetch peer companies
-            this.fetchPeerCompanies(this.currentSymbol);
+        this._lastSentimentCounts = { pos, neg, neu };
+        this.updateSentimentChart(pos, neg, neu);
+
+        const avg = articles.length ? scoreSum / articles.length : 0;
+        let overallLabel = 'Neutral', overallCls = 'neutral';
+        if (avg > 0.05)  { overallLabel = 'Bullish'; overallCls = 'positive'; }
+        if (avg < -0.05) { overallLabel = 'Bearish'; overallCls = 'negative'; }
+        if (this.sentimentBadgeEl) {
+            this.sentimentBadgeEl.textContent = overallLabel;
+            this.sentimentBadgeEl.className   = `badge ${overallCls}`;
         }
-    }
-    
-    /**
-    * Fetch peer companies from API
-    * @param {string} symbol - Stock symbol
-    */
-    async fetchPeerCompanies(symbol) {
-        try {
-            // Show loading
-            this.peerCompaniesSectionElement.style.display = 'block';
-            this.peerCompaniesListElement.innerHTML = '<div class="loading-message">Loading peer companies...</div>';
-        
-            const response = await fetch(`/api/company-peers/${encodeURIComponent(symbol)}`);
-            const data = await response.json();
-        
-            this.displayPeerCompanies(data.peers);
-        } catch (error) {
-            console.error('Error fetching peer companies:', error);
-            this.peerCompaniesListElement.innerHTML = '<div class="error-message">Failed to load peer companies.</div>';
-        }
+        if (this.articleCountEl)     this.articleCountEl.textContent = `${articles.length} articles`;
+        if (this.overallSentimentEl) this.overallSentimentEl.style.display = 'flex';
+
+        this.renderNewsList(articles);
+
+        if (this.currentHistoryData) this.overlayNewsOnChart(articles);
     }
 
-    /**
-     * Update the UI with stock data
-     * @param {Object} stockData - Stock data received from WebSocket
-     */
-    updateStockUI(stockData) {
-        if (!stockData) return;
-        
-        // Update stock name
-        if (stockData.name) {
-            this.stockNameElement.textContent = stockData.name;
-        }
-        
-        // Update price and price change
-        if (stockData.price) {
-            this.currentPriceElement.textContent = `$${stockData.price.toFixed(2)}`;
-        }
-        
-        if (stockData.change && stockData.changePercent) {
-            const changeText = `$${stockData.change.toFixed(2)} (${stockData.changePercent.toFixed(2)}%)`;
-            this.priceChangeElement.textContent = changeText;
-            
-            // Update class based on price change
-            this.priceChangeElement.className = 'price-change';
-            if (stockData.change > 0) {
-                this.priceChangeElement.classList.add('positive');
-            } else if (stockData.change < 0) {
-                this.priceChangeElement.classList.add('negative');
-            }
-        }
-        
-        // Update market data
-        if (stockData.marketCap) {
-            this.marketCapElement.textContent = stockData.marketCap;
-        }
-        
-        if (stockData.peRatio) {
-            this.peRatioElement.textContent = stockData.peRatio;
-        }
-        
-        // Update additional financial metrics
-        if (stockData.eps !== undefined) {
-            this.epsElement.textContent = stockData.eps !== null ? stockData.eps.toFixed(2) : 'N/A';
-        }
-        
-        if (stockData.beta !== undefined) {
-            this.betaElement.textContent = stockData.beta !== null ? stockData.beta.toFixed(2) : 'N/A';
-        }
-        
-        if (stockData.dividendYield !== undefined) {
-            this.dividendYieldElement.textContent = stockData.dividendYield !== null ? 
-                `${(stockData.dividendYield * 100).toFixed(2)}%` : 'N/A';
-        }
-        
-        if (stockData.dividendRate !== undefined) {
-            this.dividendRateElement.textContent = stockData.dividendRate !== null ? 
-                `$${stockData.dividendRate.toFixed(2)}` : 'N/A';
-        }
-        
-        if (stockData.volume) {
-            this.volumeElement.textContent = stockData.volume;
-        }
-        
-        if (stockData.prevClose) {
-            this.prevCloseElement.textContent = `$${stockData.prevClose.toFixed(2)}`;
-        }
-        
-        if (stockData.open) {
-            this.openElement.textContent = `$${stockData.open.toFixed(2)}`;
-        }
-        
-        if (stockData.dayLow && stockData.dayHigh) {
-            this.daysRangeElement.textContent = `$${stockData.dayLow.toFixed(2)} - $${stockData.dayHigh.toFixed(2)}`;
-        }
-        
-        if (stockData.fiftyTwoWeekLow && stockData.fiftyTwoWeekHigh) {
-            this.fiftyTwoWeekRangeElement.textContent = `$${stockData.fiftyTwoWeekLow.toFixed(2)} - $${stockData.fiftyTwoWeekHigh.toFixed(2)}`;
-        }
-        
-        if (stockData.avgVolume) {
-            this.avgVolumeElement.textContent = stockData.avgVolume;
-        }
+    renderNewsList(articles) {
+        const filtered = this.activeFilter === 'all'
+            ? articles
+            : articles.filter(a => (a.sentiment?.label || 'Neutral').toLowerCase() === this.activeFilter);
 
-        if (this.lastUpdatedElement) {
-            const now = new Date();
-            this.lastUpdatedElement.textContent = `Updated ${now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}`;
-        }
-    }
-    
-    /**
-    * Display peer companies
-    * @param {Object} peers - Peer companies object with symbol as key and name as value
-    */
-    displayPeerCompanies(peers) {
-        // Clear previous peer companies
-        this.peerCompaniesListElement.innerHTML = '';
-    
-        if (!peers || Object.keys(peers).length === 0) {
-            this.peerCompaniesSectionElement.style.display = 'none';
+        if (!filtered.length) {
+            this.newsListEl.innerHTML = `<div class="loading-message">No ${this.activeFilter} articles found.</div>`;
             return;
         }
-    
-        // Create peer company items
-        Object.entries(peers).forEach(([symbol, name]) => {
-            const peerItem = document.createElement('div');
-            peerItem.className = 'peer-company-item';
-            peerItem.innerHTML = `
-               <div class="peer-company-symbol">${symbol}</div>
-               <div class="peer-company-name">${name}</div>
-            `;
-        
-            // Add click event to select peer company
-            peerItem.addEventListener('click', () => {
-                this.symbolSearchInput.value = symbol;
-                this.handleSymbolSearch();
-            });
-        
-            this.peerCompaniesListElement.appendChild(peerItem);
-        });
-    
-        // Show peer companies section
-        this.peerCompaniesSectionElement.style.display = 'block';
-    }
-    /**
-    * Clear peer companies
-    */
-    clearPeerCompanies() {
-        this.peerCompaniesListElement.innerHTML = '';
-        this.peerCompaniesSectionElement.style.display = 'none';
-    }
 
-    /**
-     * Update the UI with news data and sentiment analysis
-     * @param {Array} newsData - News data received from WebSocket
-     */
-    updateNewsUI(newsData) {
-        if (!newsData || !Array.isArray(newsData) || newsData.length === 0) {
-            this.newsListElement.innerHTML = '<div class="no-news">No news articles available.</div>';
-            return;
-        }
-        
-        // Initialize sentiment counts
-        const sentimentCounts = { positive: 0, neutral: 0, negative: 0 };
-        let totalScore = 0;
-        let scoreCount = 0;
+        this.newsListEl.innerHTML = filtered.map(a => {
+            const sentiment = a.sentiment?.label || 'Neutral';
+            const score     = (a.sentiment?.custom_score ?? 0).toFixed(3);
+            const scoreV    = a.sentiment?.vader_score ?? 0;
+            const scoreT    = a.sentiment?.textblob_score ?? 0;
+            const scoreA    = a.sentiment?.afinn_score ?? 0;
+            const cls       = sentiment.toLowerCase();
+            const date      = a.datetime
+                ? new Date(a.datetime * 1000).toLocaleDateString('en-US',
+                    { month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' })
+                : '';
+            const imgHtml   = a.image
+                ? `<img class="news-image" src="${a.image}" alt="" loading="lazy" onerror="this.style.display='none'">`
+                : '';
 
-        newsData.forEach(article => {
-            if (article.sentiment) {
-                if (article.sentiment.category) sentimentCounts[article.sentiment.category]++;
-                if (article.sentiment.custom_score !== undefined) {
-                    totalScore += article.sentiment.custom_score;
-                    scoreCount++;
-                }
-            }
-        });
-
-        // Overall sentiment summary
-        if (this.overallSentimentElement && scoreCount > 0) {
-            const avgScore = totalScore / scoreCount;
-            const label = avgScore > 0.05 ? 'Bullish' : avgScore < -0.05 ? 'Bearish' : 'Neutral';
-            const cls   = avgScore > 0.05 ? 'positive' : avgScore < -0.05 ? 'negative' : 'neutral';
-            this.overallSentimentElement.style.display = 'flex';
-            this.overallSentimentBadgeElement.textContent = `${label} (${avgScore.toFixed(2)})`;
-            this.overallSentimentBadgeElement.className = `badge ${cls}`;
-            this.articleCountElement.textContent = `${newsData.length} articles`;
-        }
-
-        // Update sentiment chart
-        this.updateSentimentChart(sentimentCounts);
-        
-        // Clear news list
-        this.newsListElement.innerHTML = '';
-        
-        // Free stock image URLs (no copyright issues)
-        const defaultImages = [
-            'https://images.unsplash.com/photo-1611974789855-9c2a0a7236a3?w=500&auto=format&fit=crop&q=60&ixlib=rb-4.0.3',
-            'https://images.unsplash.com/photo-1590283603385-17ffb3a7f29f?w=500&auto=format&fit=crop&q=60&ixlib=rb-4.0.3',
-            'https://images.unsplash.com/photo-1535320903710-d993d3d77d29?w=500&auto=format&fit=crop&q=60&ixlib=rb-4.0.3',
-            'https://images.unsplash.com/photo-1535320485706-44d43b919500?w=500&auto=format&fit=crop&q=60&ixlib=rb-4.0.3',
-            'https://images.unsplash.com/photo-1560221328-12fe60f83ab8?w=500&auto=format&fit=crop&q=60&ixlib=rb-4.0.3'
-        ];
-        
-        // Add news articles to the list
-        newsData.forEach((article, index) => {
-            if (index >= config.MAX_NEWS_ARTICLES) return;
-            
-            const sentiment = article.sentiment ? article.sentiment.category : 'neutral';
-            const sentimentClass = sentiment.charAt(0).toUpperCase() + sentiment.slice(1);
-            const customScore = article.sentiment ? article.sentiment.custom_score.toFixed(2) : '0.00';
-            
-            // Get image URL from article or use a default image
-            let imageUrl = article.image && article.image.trim() !== '' ? 
-                article.image : defaultImages[index % defaultImages.length];
-            
-            const articleElement = document.createElement('div');
-            articleElement.className = `news-item sentiment-${sentiment.toLowerCase()}`;
-            
-            const date = new Date(article.datetime * 1000);
-            const formattedDate = date.toLocaleDateString();
-            
-            // Create tooltip content with detailed sentiment scores
-            const tooltipContent = article.sentiment ? `
-                <div class="sentiment-details">
-                    <div><strong>VADER:</strong> ${article.sentiment.vader.compound.toFixed(2)}</div>
-                    <div><strong>TextBlob:</strong> ${article.sentiment.textblob.polarity.toFixed(2)}</div>
-                    <div><strong>Afinn:</strong> ${article.sentiment.afinn.score.toFixed(2)}</div>
-                </div>
-            ` : '';
-            
-            articleElement.innerHTML = `
-                <img class="news-image" src="${imageUrl}" alt="${article.headline}" onerror="this.src='${defaultImages[index % defaultImages.length]}'">
+            return `
+            <div class="news-item sentiment-${cls}">
+                ${imgHtml}
                 <div class="news-content">
                     <div class="news-header">
-                        <span class="news-date">${formattedDate}</span>
-                        <span class="news-sentiment ${sentimentClass} tooltip">
-                            ${sentimentClass} (${customScore})
-                            <span class="tooltiptext">${tooltipContent}</span>
+                        <span class="news-date">${date}</span>
+                        <span class="tooltip">
+                            <span class="news-sentiment ${sentiment}">${sentiment} ${score}</span>
+                            <span class="tooltiptext">
+                                <div class="sentiment-details">
+                                    <div>VADER: ${scoreV.toFixed(3)}</div>
+                                    <div>TextBlob: ${scoreT.toFixed(3)}</div>
+                                    <div>Afinn: ${scoreA.toFixed(3)}</div>
+                                    <div><strong>Weighted: ${score}</strong></div>
+                                </div>
+                            </span>
                         </span>
                     </div>
-                    <h3 class="news-title">
-                        <a href="${article.url}" target="_blank">${article.headline}</a>
-                    </h3>
-                    <p class="news-summary">${article.summary || 'No summary available.'}</p>
-                    <div class="news-source">Source: ${article.source}</div>
+                    <div class="news-title">
+                        <a href="${a.url || '#'}" target="_blank" rel="noopener">${a.headline || a.summary || 'No title'}</a>
+                    </div>
+                    <div class="news-summary">${a.summary || ''}</div>
+                    <div class="news-source">${a.source || ''}</div>
                 </div>
-            `;
-            
-            this.newsListElement.appendChild(articleElement);
+            </div>`;
+        }).join('');
+    }
+
+    /* =================================================================
+       SENTIMENT PIE CHART
+       ================================================================= */
+    initSentimentChart() {
+        const ctx = document.getElementById('sentimentChart');
+        if (!ctx) return;
+        this.sentimentChart = new Chart(ctx, {
+            type: 'pie',
+            data: {
+                labels: ['Positive', 'Negative', 'Neutral'],
+                datasets: [{
+                    data: [0, 0, 0],
+                    backgroundColor: ['#28a745', '#dc3545', '#6c757d'],
+                    borderWidth: 2,
+                    borderColor: '#fff'
+                }]
+            },
+            options: {
+                responsive: true, maintainAspectRatio: true,
+                plugins: {
+                    legend: { position: 'bottom', labels: { padding: 12, font: { size: 12 } } }
+                }
+            }
         });
     }
-    
-    /**
-     * Initialize the sentiment chart with empty data
-     */
-    /**
-     * Initialize the sentiment chart with empty data
-     */
-    initSentimentChart() {
-        try {
-            const ctx = this.sentimentChartElement.getContext('2d');
-            
-            if (!ctx) {
-                console.error('Could not get 2D context for sentiment chart');
-                return;
-            }
-            
-            this.sentimentChart = new Chart(ctx, {
-                type: 'pie',
-                data: {
-                    labels: ['Positive', 'Neutral', 'Negative'],
-                    datasets: [{
-                        data: [0, 0, 0],
-                        backgroundColor: [
-                            config.CHART_COLORS.POSITIVE,
-                            config.CHART_COLORS.NEUTRAL,
-                            config.CHART_COLORS.NEGATIVE
-                        ],
-                        borderWidth: 1
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: {
-                        legend: {
-                            position: 'bottom'
-                        },
-                        title: {
-                            display: true,
-                            text: 'News Sentiment Distribution'
+
+    updateSentimentChart(pos, neg, neu) {
+        if (!this.sentimentChart) return;
+        this.sentimentChart.data.datasets[0].data = [pos, neg, neu];
+        const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+        this.sentimentChart.options.plugins.legend.labels.color = isDark ? '#e6edf3' : '#212529';
+        this.sentimentChart.update('none');
+    }
+
+    /* =================================================================
+       PRICE HISTORY CHART  (#2)
+       ================================================================= */
+    initPriceChart() {
+        const ctx = document.getElementById('priceChart');
+        if (!ctx) return;
+        const isDark    = document.documentElement.getAttribute('data-theme') === 'dark';
+        const gridColor = isDark ? 'rgba(255,255,255,.07)' : 'rgba(0,0,0,.06)';
+        const textColor = isDark ? '#8b949e' : '#6c757d';
+
+        this.priceChart = new Chart(ctx, {
+            type: 'line',
+            data: { labels: [], datasets: [] },
+            options: {
+                responsive: true, maintainAspectRatio: false,
+                interaction: { mode: 'index', intersect: false },
+                animation: { duration: 400 },
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        callbacks: {
+                            title: items => items[0]?.label || '',
+                            label: item => {
+                                if (item.datasetIndex === 0) return ` $${Number(item.raw).toFixed(2)}`;
+                                return ` ${item.raw?.headline?.slice(0, 60) || ''}`;
+                            }
                         }
                     }
+                },
+                scales: {
+                    x: {
+                        ticks: { color: textColor, maxTicksLimit: 8, maxRotation: 0 },
+                        grid:  { color: gridColor }
+                    },
+                    y: {
+                        ticks: { color: textColor, callback: v => `$${Number(v).toFixed(2)}` },
+                        grid:  { color: gridColor }
+                    }
                 }
+            }
+        });
+    }
+
+    async fetchPriceHistory(period) {
+        this.currentPeriod = period;
+        if (this.chartLoadingEl) this.chartLoadingEl.classList.remove('hidden');
+        try {
+            const r = await fetch(`/api/price-history/${this.currentSymbol}?period=${period}`);
+            const data = await r.json();
+            if (data?.error) throw new Error(data.error);
+            this.currentHistoryData = data;
+            this.renderPriceChart(data);
+            if (this.currentNewsData.length) this.overlayNewsOnChart(this.currentNewsData);
+        } catch (e) {
+            console.error('fetchPriceHistory:', e);
+            if (this.chartDataNote) this.chartDataNote.textContent = '(data unavailable)';
+        } finally {
+            if (this.chartLoadingEl) this.chartLoadingEl.classList.add('hidden');
+        }
+    }
+
+    renderPriceChart(data) {
+        if (!this.priceChart || !data?.timestamps?.length) return;
+        const { timestamps, prices } = data;
+        const isDark    = document.documentElement.getAttribute('data-theme') === 'dark';
+        const lineColor = isDark ? '#58a6ff' : '#0d6efd';
+        const fillColor = isDark ? 'rgba(88,166,255,.08)' : 'rgba(13,110,253,.07)';
+
+        const labels = timestamps.map(ts => {
+            const d = new Date(ts);
+            if (this.currentPeriod === '1d') {
+                return d.toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' });
+            }
+            if (this.currentPeriod === '5d') {
+                return d.toLocaleDateString([], { month:'short', day:'numeric' }) + ' ' +
+                       d.toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' });
+            }
+            return d.toLocaleDateString([], { month:'short', day:'numeric' });
+        });
+
+        const priceDataset = {
+            label: 'Price',
+            data: prices,
+            borderColor: lineColor,
+            backgroundColor: fillColor,
+            borderWidth: 2,
+            pointRadius: 0,
+            pointHoverRadius: 4,
+            fill: true,
+            tension: 0.3,
+        };
+
+        this.priceChart.data.labels   = labels;
+        this.priceChart.data.datasets = [priceDataset];
+
+        const gridColor = isDark ? 'rgba(255,255,255,.07)' : 'rgba(0,0,0,.06)';
+        const textColor = isDark ? '#8b949e' : '#6c757d';
+        this.priceChart.options.scales.x.ticks.color = textColor;
+        this.priceChart.options.scales.x.grid.color  = gridColor;
+        this.priceChart.options.scales.y.ticks.color = textColor;
+        this.priceChart.options.scales.y.grid.color  = gridColor;
+
+        if (this.chartDataNote && prices.length) {
+            const mn = Math.min(...prices).toFixed(2);
+            const mx = Math.max(...prices).toFixed(2);
+            this.chartDataNote.textContent = `$${mn} – $${mx}`;
+        }
+
+        this.priceChart.update();
+    }
+
+    /* ── News markers on price chart (#3) ── */
+    overlayNewsOnChart(articles) {
+        if (!this.priceChart || !this.currentHistoryData?.timestamps?.length) return;
+        const { timestamps, prices } = this.currentHistoryData;
+
+        const groups = { positive: [], negative: [], neutral: [] };
+        const avgInterval = timestamps.length > 1
+            ? (timestamps[timestamps.length - 1] - timestamps[0]) / timestamps.length
+            : Infinity;
+
+        articles.forEach(a => {
+            if (!a.datetime) return;
+            const targetMs = a.datetime * 1000;
+            let closest = 0, minDiff = Infinity;
+            timestamps.forEach((ts, i) => {
+                const d = Math.abs(ts - targetMs);
+                if (d < minDiff) { minDiff = d; closest = i; }
             });
-            console.log('Sentiment chart initialized successfully');
-        } catch (error) {
-            console.error('Error initializing sentiment chart:', error);
+            if (minDiff > avgInterval * 3) return;  /* too far from any data point */
+
+            const label = (a.sentiment?.label || 'Neutral').toLowerCase();
+            const key   = label === 'positive' ? 'positive' : label === 'negative' ? 'negative' : 'neutral';
+            groups[key].push({ x: closest, y: prices[closest], headline: a.headline || a.summary || '' });
+        });
+
+        const colors = { positive: '#28a745', negative: '#dc3545', neutral: '#6c757d' };
+        const priceLine  = this.priceChart.data.datasets[0];
+
+        const scatterDatasets = Object.entries(groups)
+            .filter(([, pts]) => pts.length > 0)
+            .map(([label, pts]) => ({
+                type: 'scatter',
+                label: `${label} news`,
+                data: pts.map(p => ({ x: p.x, y: p.y, headline: p.headline })),
+                backgroundColor: colors[label],
+                borderColor: '#fff',
+                borderWidth: 1.5,
+                pointRadius: 7,
+                pointHoverRadius: 9,
+                parsing: { xAxisKey: 'x', yAxisKey: 'y' },
+            }));
+
+        this.priceChart.data.datasets = [priceLine, ...scatterDatasets];
+        this.priceChart.update('none');
+    }
+
+    /* =================================================================
+       PERIOD SELECTOR
+       ================================================================= */
+    initPeriodSelector() {
+        document.querySelectorAll('.period-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.querySelectorAll('.period-btn').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                this.fetchPriceHistory(btn.dataset.period);
+            });
+        });
+    }
+
+    /* =================================================================
+       SENTIMENT FILTER TABS  (#5)
+       ================================================================= */
+    initSentimentFilter() {
+        document.querySelectorAll('.filter-tab').forEach(tab => {
+            tab.addEventListener('click', () => {
+                this.activeFilter = tab.dataset.filter;
+                document.querySelectorAll('.filter-tab').forEach(t => t.classList.remove('active'));
+                tab.classList.add('active');
+                if (this.currentNewsData.length) this.renderNewsList(this.currentNewsData);
+            });
+        });
+    }
+
+    resetFilterTabs() {
+        document.querySelectorAll('.filter-tab').forEach(t => t.classList.remove('active'));
+        document.querySelector('.filter-tab[data-filter="all"]')?.classList.add('active');
+    }
+
+    /* =================================================================
+       WATCHLIST  (#4)
+       ================================================================= */
+    initWatchlist() {
+        this.addToWatchlistBtn?.addEventListener('click', () => this.toggleWatchlist(this.currentSymbol));
+        this.renderWatchlist();
+        this.updateWatchlistHighlight();
+    }
+
+    toggleWatchlist(sym) {
+        const idx = this.watchlist.indexOf(sym);
+        if (idx === -1) this.watchlist.push(sym);
+        else            this.watchlist.splice(idx, 1);
+        localStorage.setItem('watchlist', JSON.stringify(this.watchlist));
+        this.renderWatchlist();
+        this.updateWatchlistHighlight();
+    }
+
+    removeFromWatchlist(sym) {
+        this.watchlist = this.watchlist.filter(s => s !== sym);
+        localStorage.setItem('watchlist', JSON.stringify(this.watchlist));
+        this.renderWatchlist();
+        this.updateWatchlistHighlight();
+    }
+
+    renderWatchlist() {
+        if (!this.watchlistItemsEl) return;
+        if (!this.watchlist.length) {
+            if (this.watchlistStrip) this.watchlistStrip.style.display = 'none';
+            return;
+        }
+        if (this.watchlistStrip) this.watchlistStrip.style.display = 'block';
+
+        this.watchlistItemsEl.innerHTML = this.watchlist.map(sym => {
+            const cached   = this.watchlistPrices[sym] || {};
+            const price    = cached.price  != null ? `$${Number(cached.price).toFixed(2)}`  : '';
+            const chg      = cached.change ?? null;
+            const chgClass = chg === null ? '' : (Number(chg) >= 0 ? 'up' : 'down');
+            const chgStr   = chg !== null ? `${Number(chg) >= 0 ? '+' : ''}${Number(chg).toFixed(2)}%` : '';
+            const active   = sym === this.currentSymbol ? 'active' : '';
+            return `
+            <div class="watchlist-chip ${active}" data-sym="${sym}">
+                <span class="wl-symbol">${sym}</span>
+                ${price  ? `<span class="wl-price">${price}</span>` : ''}
+                ${chgStr ? `<span class="wl-change ${chgClass}">${chgStr}</span>` : ''}
+                <span class="wl-remove" data-rem="${sym}" title="Remove">&times;</span>
+            </div>`;
+        }).join('');
+
+        this.watchlistItemsEl.querySelectorAll('.watchlist-chip').forEach(chip => {
+            chip.addEventListener('click', e => {
+                const rem = e.target.closest('.wl-remove');
+                if (rem) { this.removeFromWatchlist(rem.dataset.rem); return; }
+                this.symbolSearch.value = chip.dataset.sym;
+                this.loadSymbol(chip.dataset.sym);
+            });
+        });
+    }
+
+    updateWatchlistHighlight() {
+        const inList = this.watchlist.includes(this.currentSymbol);
+        if (this.addToWatchlistBtn) {
+            const icon = this.addToWatchlistBtn.querySelector('i');
+            if (icon) icon.className = inList ? 'fas fa-star' : 'far fa-star';
+            this.addToWatchlistBtn.style.color = inList ? '#f5a623' : '';
+        }
+        document.querySelectorAll('.watchlist-chip').forEach(c =>
+            c.classList.toggle('active', c.dataset.sym === this.currentSymbol)
+        );
+    }
+
+    /* =================================================================
+       PEER COMPANIES
+       ================================================================= */
+    async loadPeers(sym) {
+        if (!this.peerSectionEl || !this.peerCompaniesListEl) return;
+        this.peerCompaniesListEl.innerHTML = '<div class="loading-message">Loading…</div>';
+        try {
+            const r = await fetch(`/api/company-peers/${sym}`);
+            const data = await r.json();
+            const peers = (data.peers || []).filter(p => p !== sym).slice(0, 12);
+            if (!peers.length) { this.peerSectionEl.style.display = 'none'; return; }
+            this.peerSectionEl.style.display = 'block';
+            this.peerCompaniesListEl.innerHTML = peers.map(p =>
+                `<div class="peer-company-item" data-sym="${p}">
+                   <div class="peer-company-symbol">${p}</div>
+                 </div>`
+            ).join('');
+            this.peerCompaniesListEl.querySelectorAll('.peer-company-item').forEach(el =>
+                el.addEventListener('click', () => {
+                    this.symbolSearch.value = el.dataset.sym;
+                    this.loadSymbol(el.dataset.sym);
+                })
+            );
+        } catch {
+            this.peerSectionEl.style.display = 'none';
         }
     }
-    
-    /**
-     * Update the sentiment chart with new data
-     * @param {Object} sentimentCounts - Counts of positive, neutral, and negative sentiments
-     */
-    updateSentimentChart(sentimentCounts) {
-        if (!this.sentimentChart) return;
-        
-        this.sentimentChart.data.datasets[0].data = [
-            sentimentCounts.positive,
-            sentimentCounts.neutral,
-            sentimentCounts.negative
-        ];
-        
-        this.sentimentChart.update();
-    }
-    
-    /**
-     * Clear stock data from the UI
-     */
-    clearStockData() {
-        this.currentPriceElement.textContent = '--';
-        this.priceChangeElement.textContent = '-- (--)';
-        this.priceChangeElement.className = 'price-change';
-        this.marketCapElement.textContent = '--';
-        this.peRatioElement.textContent = '--';
-        this.epsElement.textContent = '--';
-        this.betaElement.textContent = '--';
-        this.dividendYieldElement.textContent = '--';
-        this.dividendRateElement.textContent = '--';
-        this.volumeElement.textContent = '--';
-        this.prevCloseElement.textContent = '--';
-        this.openElement.textContent = '--';
-        this.daysRangeElement.textContent = '--';
-        this.fiftyTwoWeekRangeElement.textContent = '--';
-        this.avgVolumeElement.textContent = '--';
-        if (this.lastUpdatedElement) this.lastUpdatedElement.textContent = '--';
-    }
-    
-    /**
-     * Clear news data from the UI
-     */
-    clearNewsData() {
-        this.newsListElement.innerHTML = '<div class="loading-message">Loading news articles...</div>';
-        
-        if (this.sentimentChart) {
-            this.sentimentChart.data.datasets[0].data = [0, 0, 0];
-            this.sentimentChart.update();
-        }
+
+    /* =================================================================
+       KEYBOARD SHORTCUTS  (#5)
+       ================================================================= */
+    initKeyboardShortcuts() {
+        document.addEventListener('keydown', e => {
+            if (document.activeElement === this.symbolSearch) return;
+            if (e.key === '/') {
+                e.preventDefault();
+                this.symbolSearch.focus();
+                this.symbolSearch.select();
+            }
+            if (e.key === 'd') this.toggleDarkMode();
+            if (e.key === 'Escape') {
+                this.symbolSearch.blur();
+                this.hideSuggestions();
+            }
+        });
     }
 }
 
-// Add these methods to the TradingApp class
-
-// Initialize the application when the DOM is loaded
-document.addEventListener('DOMContentLoaded', () => {
-    const app = new TradingApp();
-});
-
-
+/* ── Boot ── */
+document.addEventListener('DOMContentLoaded', () => { window.app = new TradingApp(); });

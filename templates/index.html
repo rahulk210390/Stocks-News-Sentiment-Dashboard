@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="light">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -9,28 +9,47 @@
     <link rel="stylesheet" href="/css/styles.css">
 </head>
 <body>
+
+    <!-- ── Header ─────────────────────────────────────────────────── -->
     <header class="header">
         <div class="container">
-            <div class="row align-items-center">
-                <div class="col-md-6">
-                    <div class="d-flex align-items-center gap-3">
-                        <h1 class="mb-0">Stock-News Sentiment Dashboard</h1>
-                        <span id="marketStatus" class="market-status closed">CLOSED</span>
+            <div class="row align-items-center g-2">
+                <div class="col-md-5">
+                    <div class="d-flex align-items-center gap-2">
+                        <span class="brand-icon"><i class="fas fa-chart-line"></i></span>
+                        <h1 class="mb-0">StockSentiment</h1>
+                        <span id="marketStatus" class="market-status closed ms-1">CLOSED</span>
                     </div>
                 </div>
-                <div class="col-md-6">
-                    <div class="search-container">
+                <div class="col-md-7">
+                    <div class="d-flex align-items-center gap-2 justify-content-md-end">
                         <div class="symbol-search-wrapper">
-                            <input type="text" id="symbolSearch" placeholder="Search symbol (e.g. AAPL)" class="form-control form-control-sm">
+                            <input type="text" id="symbolSearch"
+                                   placeholder="Search symbol… (press /)"
+                                   class="form-control form-control-sm">
                             <div id="symbolSuggestions" class="symbol-suggestions"></div>
                         </div>
-                        <button id="searchBtn" class="btn btn-primary btn-sm">Search</button>
+                        <button id="searchBtn" class="btn btn-primary btn-sm px-3">Search</button>
+                        <button id="darkModeToggle" class="btn btn-icon" title="Toggle dark mode">
+                            <i class="fas fa-moon"></i>
+                        </button>
                     </div>
                 </div>
             </div>
         </div>
     </header>
 
+    <!-- ── Watchlist strip ────────────────────────────────────────── -->
+    <div id="watchlistStrip" class="watchlist-strip" style="display:none;">
+        <div class="container">
+            <div class="d-flex align-items-center gap-2 flex-wrap">
+                <span class="watchlist-label"><i class="fas fa-star me-1"></i>Watchlist</span>
+                <div id="watchlistItems" class="d-flex gap-2 flex-wrap"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ── Main content ───────────────────────────────────────────── -->
     <main class="container">
 
         <!-- Stock Overview -->
@@ -42,92 +61,38 @@
                             <div class="d-flex align-items-baseline gap-2">
                                 <h2 id="stockSymbol" class="mb-0">BCS</h2>
                             </div>
-                            <p id="stockName" class="mb-0">Barclays PLC</p>
+                            <p id="stockName" class="mb-0 text-muted">Barclays PLC</p>
                         </div>
-                        <span id="lastUpdated" class="last-updated mt-1">--</span>
+                        <div class="d-flex align-items-center gap-2">
+                            <span id="lastUpdated" class="last-updated"></span>
+                            <button id="addToWatchlistBtn" class="btn btn-icon btn-sm"
+                                    title="Add to watchlist">
+                                <i class="far fa-star"></i>
+                            </button>
+                        </div>
                     </div>
                     <div class="card-body">
                         <div class="row">
                             <div class="col-md-4">
                                 <div class="price-container">
-                                    <h2 id="currentPrice">$0.00</h2>
-                                    <div id="priceChange" class="price-change">$0.00 (0.00%)</div>
+                                    <h2 id="currentPrice">--</h2>
+                                    <div id="priceChange" class="price-change">-- (--)</div>
                                 </div>
                             </div>
                             <div class="col-md-8">
                                 <div class="row market-data">
-                                    <div class="col-6 col-md-3">
-                                        <div class="data-item">
-                                            <div class="label">Market Cap</div>
-                                            <div id="marketCap" class="value">--</div>
-                                        </div>
-                                    </div>
-                                    <div class="col-6 col-md-3">
-                                        <div class="data-item">
-                                            <div class="label">P/E Ratio</div>
-                                            <div id="peRatio" class="value">--</div>
-                                        </div>
-                                    </div>
-                                    <div class="col-6 col-md-3">
-                                        <div class="data-item">
-                                            <div class="label">EPS</div>
-                                            <div id="eps" class="value">--</div>
-                                        </div>
-                                    </div>
-                                    <div class="col-6 col-md-3">
-                                        <div class="data-item">
-                                            <div class="label">Beta</div>
-                                            <div id="beta" class="value">--</div>
-                                        </div>
-                                    </div>
-                                    <div class="col-6 col-md-3">
-                                        <div class="data-item">
-                                            <div class="label">Volume</div>
-                                            <div id="volume" class="value">--</div>
-                                        </div>
-                                    </div>
-                                    <div class="col-6 col-md-3">
-                                        <div class="data-item">
-                                            <div class="label">Avg Volume</div>
-                                            <div id="avgVolume" class="value">--</div>
-                                        </div>
-                                    </div>
-                                    <div class="col-6 col-md-3">
-                                        <div class="data-item">
-                                            <div class="label">Prev Close</div>
-                                            <div id="prevClose" class="value">--</div>
-                                        </div>
-                                    </div>
-                                    <div class="col-6 col-md-3">
-                                        <div class="data-item">
-                                            <div class="label">Open</div>
-                                            <div id="open" class="value">--</div>
-                                        </div>
-                                    </div>
-                                    <div class="col-6 col-md-3">
-                                        <div class="data-item">
-                                            <div class="label">Day's Range</div>
-                                            <div id="daysRange" class="value">--</div>
-                                        </div>
-                                    </div>
-                                    <div class="col-6 col-md-3">
-                                        <div class="data-item">
-                                            <div class="label">52 Week Range</div>
-                                            <div id="fiftyTwoWeekRange" class="value">--</div>
-                                        </div>
-                                    </div>
-                                    <div class="col-6 col-md-3">
-                                        <div class="data-item">
-                                            <div class="label">Dividend Yield</div>
-                                            <div id="dividendYield" class="value">--</div>
-                                        </div>
-                                    </div>
-                                    <div class="col-6 col-md-3">
-                                        <div class="data-item">
-                                            <div class="label">Dividend Rate</div>
-                                            <div id="dividendRate" class="value">--</div>
-                                        </div>
-                                    </div>
+                                    <div class="col-6 col-md-3"><div class="data-item"><div class="label">Market Cap</div><div id="marketCap" class="value">--</div></div></div>
+                                    <div class="col-6 col-md-3"><div class="data-item"><div class="label">P/E Ratio</div><div id="peRatio" class="value">--</div></div></div>
+                                    <div class="col-6 col-md-3"><div class="data-item"><div class="label">EPS</div><div id="eps" class="value">--</div></div></div>
+                                    <div class="col-6 col-md-3"><div class="data-item"><div class="label">Beta</div><div id="beta" class="value">--</div></div></div>
+                                    <div class="col-6 col-md-3"><div class="data-item"><div class="label">Volume</div><div id="volume" class="value">--</div></div></div>
+                                    <div class="col-6 col-md-3"><div class="data-item"><div class="label">Avg Volume</div><div id="avgVolume" class="value">--</div></div></div>
+                                    <div class="col-6 col-md-3"><div class="data-item"><div class="label">Prev Close</div><div id="prevClose" class="value">--</div></div></div>
+                                    <div class="col-6 col-md-3"><div class="data-item"><div class="label">Open</div><div id="open" class="value">--</div></div></div>
+                                    <div class="col-6 col-md-3"><div class="data-item"><div class="label">Day Range</div><div id="daysRange" class="value">--</div></div></div>
+                                    <div class="col-6 col-md-3"><div class="data-item"><div class="label">52W Range</div><div id="fiftyTwoWeekRange" class="value">--</div></div></div>
+                                    <div class="col-6 col-md-3"><div class="data-item"><div class="label">Div Yield</div><div id="dividendYield" class="value">--</div></div></div>
+                                    <div class="col-6 col-md-3"><div class="data-item"><div class="label">Div Rate</div><div id="dividendRate" class="value">--</div></div></div>
                                 </div>
                             </div>
                         </div>
@@ -136,14 +101,47 @@
             </div>
         </div>
 
-        <!-- Peer Companies (shown after search) -->
+        <!-- Price History Chart -->
+        <div class="row">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <span class="fw-semibold">Price History
+                            <small id="chartDataNote" class="text-muted fw-normal ms-1"></small>
+                        </span>
+                        <div class="period-selector" id="periodSelector">
+                            <button class="period-btn" data-period="1d">1D</button>
+                            <button class="period-btn" data-period="5d">5D</button>
+                            <button class="period-btn active" data-period="1mo">1M</button>
+                            <button class="period-btn" data-period="6mo">6M</button>
+                            <button class="period-btn" data-period="1y">1Y</button>
+                        </div>
+                    </div>
+                    <div class="card-body pb-2">
+                        <div class="price-chart-container">
+                            <div id="chartLoading" class="chart-loading">
+                                <div class="spinner"></div>
+                            </div>
+                            <canvas id="priceChart"></canvas>
+                        </div>
+                        <div class="chart-legend mt-2">
+                            <span class="legend-dot positive-dot"></span><span class="legend-text">Positive news</span>
+                            <span class="legend-dot negative-dot ms-3"></span><span class="legend-text">Negative news</span>
+                            <span class="legend-dot neutral-dot ms-3"></span><span class="legend-text">Neutral news</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Peer Companies -->
         <div class="row" id="peerCompaniesSection" style="display: none;">
             <div class="col-12">
                 <div class="card">
                     <div class="card-header">Peer Companies</div>
                     <div class="card-body py-2">
                         <div id="peerCompaniesList" class="peer-companies-list">
-                            <div class="loading-message">Loading peer companies...</div>
+                            <div class="loading-message">Loading…</div>
                         </div>
                     </div>
                 </div>
@@ -153,11 +151,19 @@
         <!-- News Sentiment Analysis -->
         <div class="row">
             <div class="col-12">
-                <div class="card sentiment-analysis">
+                <div class="card">
                     <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
-                        <span>News Sentiment Analysis</span>
-                        <div id="overallSentiment" class="overall-sentiment" style="display: none;">
-                            <span class="overall-label">Overall:</span>
+                        <div class="d-flex align-items-center gap-3">
+                            <span class="fw-semibold">News Sentiment</span>
+                            <div class="sentiment-filter-tabs" id="sentimentFilterTabs">
+                                <button class="filter-tab active" data-filter="all">All</button>
+                                <button class="filter-tab positive-tab" data-filter="positive">Positive</button>
+                                <button class="filter-tab neutral-tab" data-filter="neutral">Neutral</button>
+                                <button class="filter-tab negative-tab" data-filter="negative">Negative</button>
+                            </div>
+                        </div>
+                        <div id="overallSentiment" class="overall-sentiment" style="display:none;">
+                            <span class="text-muted" style="font-size:.8rem;">Overall:</span>
                             <span id="overallSentimentBadge" class="badge neutral">--</span>
                             <small id="articleCount" class="text-muted">0 articles</small>
                         </div>
@@ -171,7 +177,7 @@
                             </div>
                             <div class="col-md-8">
                                 <div id="newsList" class="news-list">
-                                    <div class="loading-message">Loading news articles...</div>
+                                    <div class="loading-message">Loading news articles…</div>
                                 </div>
                             </div>
                         </div>
@@ -184,13 +190,13 @@
 
     <footer class="footer">
         <div class="container">
-            <p class="mb-0">© 2025 Stock-News Sentiment Dashboard &mdash; Data by Yahoo Finance &amp; Finnhub &mdash; Built by Rahul Kunal</p>
+            <p class="mb-0">© 2025 StockSentiment &mdash; Data by Yahoo Finance &amp; Finnhub &mdash; Built by Rahul Kunal</p>
         </div>
     </footer>
 
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
     <script src="/js/config.js"></script>
-    <script src="/js/sentiment.js"></script>
     <script src="/js/app.js"></script>
 </body>
 </html>

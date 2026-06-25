@@ -88,15 +88,20 @@ class TradingApp {
        ================================================================= */
     initDarkMode() {
         const saved = localStorage.getItem('theme') || 'light';
-        document.documentElement.setAttribute('data-theme', saved);
+        this._applyTheme(saved);
         this.updateDarkModeIcon();
         this.darkModeToggle?.addEventListener('click', () => this.toggleDarkMode());
+    }
+
+    _applyTheme(theme) {
+        document.documentElement.setAttribute('data-theme', theme);
+        document.documentElement.setAttribute('data-bs-theme', theme);
     }
 
     toggleDarkMode() {
         const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
         const next   = isDark ? 'light' : 'dark';
-        document.documentElement.setAttribute('data-theme', next);
+        this._applyTheme(next);
         localStorage.setItem('theme', next);
         this.updateDarkModeIcon();
         /* rebuild charts so colours update */
